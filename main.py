@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from claw_log.engine import GeminiSummarizer, OpenAISummarizer, CodexOAuthSummarizer
-from claw_log.storage import prepend_to_log_file, read_recent_logs
+from claw_log.storage import prepend_to_log_file, read_recent_logs, LOG_FILENAME
 from claw_log.scheduler import install_schedule, show_schedule, remove_schedule, get_schedule_summary
 
 # .env 파일은 현재 작업 디렉토리(CWD)에서 찾습니다.
@@ -539,18 +539,22 @@ def main():
         change_engine()
         return
     if args.log_edit:
-        log_path = Path.cwd() / "career_logs.md"
+        log_path = Path.cwd() / LOG_FILENAME
         if not log_path.exists():
             print("⚠️ 로그 파일이 없습니다. 먼저 'claw-log'를 실행하세요.")
             return
-        import platform, subprocess
+        import platform
         system = platform.system()
         if system == "Windows":
             os.startfile(log_path)
         elif system == "Darwin":
             subprocess.run(["open", str(log_path)])
         else:
-            subprocess.run(["xdg-open", str(log_path)])
+            try:
+                subprocess.run(["xdg-open", str(log_path)])
+            except FileNotFoundError:
+                print(f"⚠️ 편집기를 열 수 없습니다. 직접 열어주세요: {log_path}")
+                return
         print(f"📝 편집기로 열었습니다: {log_path}")
         return
     if args.log is not None:

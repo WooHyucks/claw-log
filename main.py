@@ -213,11 +213,8 @@ def manage_projects():
         print("   ⏭️ 취소됨.")
 
 
-def _update_env_projects(selected_paths, input_paths):
-    """선택된 프로젝트 경로를 .env에 업데이트합니다."""
-    load_dotenv(ENV_PATH, override=True)
-    
-    # 기존 .env 읽기
+def _read_env_data():
+    """기존 .env 파일을 dict로 읽어옵니다."""
     env_data = {}
     if ENV_PATH.exists():
         with open(ENV_PATH, "r", encoding="utf-8") as f:
@@ -226,60 +223,66 @@ def _update_env_projects(selected_paths, input_paths):
                 if "=" in line and not line.startswith("#"):
                     key, _, value = line.partition("=")
                     env_data[key] = value
-    
-    # 업데이트
-    env_data["PROJECT_PATHS"] = ",".join(selected_paths)
-    env_data["INPUT_PATHS"] = input_paths
-    
-    # 저장
+    return env_data
+
+
+def _save_env_data(env_data):
+    """env_data dict를 .env 파일에 저장합니다."""
     try:
         with open(ENV_PATH, "w", encoding="utf-8") as f:
             for key, value in env_data.items():
                 f.write(f"{key}={value}\n")
-        print(f"✅ 프로젝트 설정 저장 완료: {ENV_PATH.absolute()}")
+        return True
     except Exception as e:
         print(f"❌ 설정 저장 실패: {e}")
+        return False
 
 
-# ── 마법사 ──
+def _update_env_projects(selected_paths, input_paths):
+    """선택된 프로젝트 경로를 .env에 업데이트합니다."""
+    load_dotenv(ENV_PATH, override=True)
+    env_data = _read_env_data()
+    env_data["PROJECT_PATHS"] = ",".join(selected_paths)
+    env_data["INPUT_PATHS"] = input_paths
+    if _save_env_data(env_data):
+        print(f"✅ 프로젝트 설정 저장 완료: {ENV_PATH.absolute()}")
 
-def run_wizard():
-    print("\n🔮 Claw-Log 초기 설정 마법사 (Tri-LLM Edition)\n")
-    
-    print("1️⃣  사용할 AI 엔진을 선택하세요.")
+
+# ── 엔진 선택 (공용) ──
+
+def select_engine():
+    """AI 엔진 선택 UI. 반환: (llm_type, api_key, codex_model) 또는 실패 시 None."""
+    print("\n   사용할 AI 엔진을 선택하세요.")
     print("   [1] Google Gemini (무료 티어 제공)")
     print("   [2] OpenAI GPT-4o-mini (API Key 방식, 종량제)")
     print("   [3] OpenAI Codex (ChatGPT 구독 OAuth 로그인)")
     choice = input("   👉 선택 (1/2/3): ").strip()
-    
+
     if choice == "1":
         llm_type = "gemini"
     elif choice == "3":
         llm_type = "openai-oauth"
     else:
         llm_type = "openai"
-    
-    # OAuth 방식은 API Key 대신 브라우저 로그인
+
     api_key = ""
     codex_model = ""
     if llm_type == "openai-oauth":
-        print(f"\n2️⃣  ChatGPT 계정으로 브라우저 로그인을 진행합니다.")
+        print(f"\n   ChatGPT 계정으로 브라우저 로그인을 진행합니다.")
         print("   ⚠️  ChatGPT Plus 또는 Pro 구독이 필요합니다.")
         print("   ⚠️  구독 요금제의 사용량 제한을 공유합니다.")
         confirm = input("   👉 계속 진행할까요? (y/n): ").strip().lower()
         if confirm != 'y':
-            print("❌ 설정이 취소되었습니다.")
-            sys.exit(1)
-        
+            return None
+
         from claw_log.oauth import run_oauth_login
         token_data = run_oauth_login()
         if not token_data:
             print("❌ OAuth 로그인에 실패했습니다.")
-            sys.exit(1)
+            return None
         api_key = "__OAUTH__"
         print("   ✅ OAuth 로그인 성공!")
-        
-        # 모델 선택
+
         print("\n   🧠 사용할 모델을 선택하세요.")
         print("   [1] GPT-5.1  — 범용 추론, 쿼터 효율적 (추천)")
         print("   [2] GPT-5.2  — 최고 성능, 쿼터 약 1.75배 소모")
@@ -291,16 +294,54 @@ def run_wizard():
             codex_model = "gpt-5.1"
             print("   ✅ 모델: GPT-5.1")
     else:
-        print(f"\n2️⃣  API Key를 입력하세요.")
         if llm_type == "gemini":
             print("   (발급: https://aistudio.google.com/app/apikey)")
         else:
             print("   (발급: https://platform.openai.com/api-keys)")
-            
+
         api_key = input("   👉 API Key: ").strip()
         if not api_key:
             print("❌ API Key가 필요합니다.")
-            sys.exit(1)
+            return None
+
+    return llm_type, api_key, codex_model
+
+
+def change_engine():
+    """엔진/모델만 변경합니다 (프로젝트·스케줄 설정 유지)."""
+    load_dotenv(ENV_PATH, override=True)
+    current = os.getenv("LLM_TYPE", "미설정").upper()
+    print(f"\n🔧 AI 엔진 변경 (현재: {current})")
+
+    result = select_engine()
+    if result is None:
+        print("❌ 엔진 변경이 취소되었습니다.")
+        return
+
+    llm_type, api_key, codex_model = result
+    env_data = _read_env_data()
+    env_data["LLM_TYPE"] = llm_type
+    env_data["API_KEY"] = api_key
+    if codex_model:
+        env_data["CODEX_MODEL"] = codex_model
+    elif "CODEX_MODEL" in env_data:
+        del env_data["CODEX_MODEL"]
+
+    if _save_env_data(env_data):
+        print(f"✅ 엔진 변경 완료: {llm_type.upper()}")
+
+
+# ── 마법사 ──
+
+def run_wizard():
+    print("\n🔮 Claw-Log 초기 설정 마법사 (Tri-LLM Edition)\n")
+
+    print("1️⃣  사용할 AI 엔진을 선택하세요.")
+    result = select_engine()
+    if result is None:
+        print("❌ 설정이 취소되었습니다.")
+        sys.exit(1)
+    llm_type, api_key, codex_model = result
 
     # 3. 프로젝트 경로 (토글 선택)
     print("\n3️⃣  분석할 Git 프로젝트 경로들을 입력하세요 (쉼표 구분).")
@@ -422,9 +463,13 @@ def main():
     parser.add_argument("--schedule-remove", action="store_true", help="스케줄 삭제")
     parser.add_argument("--projects", action="store_true", help="프로젝트 관리 (추가/선택/해제)")
     parser.add_argument("--projects-show", action="store_true", help="현재 프로젝트 목록 조회")
+    parser.add_argument("--engine", action="store_true", help="AI 엔진/모델 변경 (프로젝트·스케줄 유지)")
     args = parser.parse_args()
 
     # 0. 즉시 실행 명령어 (설정 불필요)
+    if args.engine:
+        change_engine()
+        return
     if args.schedule_show:
         show_schedule()
         return

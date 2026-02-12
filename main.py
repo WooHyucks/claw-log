@@ -523,9 +523,14 @@ def main():
     parser.add_argument("--engine", action="store_true", help="AI 엔진/모델 변경 (프로젝트·스케줄 유지)")
     parser.add_argument("--days", type=int, default=0, metavar="N", help="과거 N일치 커밋 요약 (예: --days 7)")
     parser.add_argument("--log", nargs="?", const=5, type=int, metavar="N", help="최근 N개 로그 조회 (기본: 5)")
+    parser.add_argument("--serve", nargs="?", const=8080, type=int, metavar="PORT", help="로컬 웹 대시보드 (기본 포트: 8080)")
     args = parser.parse_args()
 
     # 0. 즉시 실행 명령어 (설정 불필요)
+    if args.serve is not None:
+        from claw_log.server import serve_dashboard
+        serve_dashboard(port=args.serve)
+        return
     if args.status:
         show_status()
         return

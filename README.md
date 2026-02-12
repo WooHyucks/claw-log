@@ -51,15 +51,32 @@ claw-log
 ### 3. 주요 CLI 명령어
 
 ```bash
-claw-log                     # 실행 (최초 실행 시 설정 마법사 자동 시작)
-claw-log --reset             # 설정 초기화 및 마법사 재실행
-claw-log --projects          # 프로젝트 관리 (추가/선택/해제)
-claw-log --projects-show     # 현재 등록된 프로젝트 목록 조회
+# 실행
+claw-log                     # 메인 워크플로우 (diff 수집 → AI 요약 → 저장)
+claw-log --reset             # 설정 초기화 후 마법사 재실행
+claw-log --days 7            # 과거 N일치 커밋 한꺼번에 요약
+
+# 설정 조회/변경
+claw-log --status            # 엔진, 프로젝트, 스케줄, 로그파일 상태 한눈에 조회
+claw-log --engine            # AI 엔진/모델만 변경 (프로젝트·스케줄 유지)
+claw-log --dry-run           # API 호출 없이 수집될 diff 크기/토큰 미리보기
+
+# 프로젝트 관리
+claw-log --projects          # 프로젝트 추가/선택/해제 (인터랙티브)
+claw-log --projects-show     # 등록된 프로젝트 목록 조회
+
+# 스케줄 관리
 claw-log --schedule 23:30    # 매일 자동 실행 스케줄 등록/변경
 claw-log --schedule-show     # 현재 스케줄 조회
 claw-log --schedule-remove   # 스케줄 삭제
-claw-log --serve              # 로컬 웹 대시보드 (기본 포트: 8080)
-claw-log --serve 3000         # 커스텀 포트로 대시보드 실행
+
+# 로그 조회
+claw-log --log               # 최근 5개 엔트리 출력
+claw-log --log 20            # 최근 20개 엔트리 출력
+
+# 대시보드
+claw-log --serve             # 로컬 웹 대시보드 (기본 포트: 8080)
+claw-log --serve 3000        # 커스텀 포트로 대시보드 실행
 ```
 
 ---
@@ -103,6 +120,9 @@ pipx install claw-log --force --no-cache-dir
 - **인터랙티브 프로젝트 탐색**: 상위 폴더에서 하위 Git 저장소를 재귀 탐색하고 체크박스 UI로 선택
 - **프로젝트 관리 CLI**: `--projects`, `--projects-show` 명령으로 등록된 프로젝트 관리
 - **스케줄러 강화**: 사용자 지정 시각 설정, 스케줄 조회(`--schedule-show`), 삭제(`--schedule-remove`)
+- **과거 N일 요약**: `--days 7`로 과거 커밋을 한꺼번에 요약
+- **설정/로그 조회**: `--status`, `--engine`, `--dry-run`, `--log` 명령어 추가
+- **로컬 웹 대시보드**: `--serve`로 설정/프로젝트/스케줄/로그를 브라우저에서 조회
 
 ---
 

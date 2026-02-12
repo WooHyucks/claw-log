@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from claw_log.engine import GeminiSummarizer, OpenAISummarizer, CodexOAuthSummarizer
 from claw_log.storage import prepend_to_log_file
-from claw_log.scheduler import install_schedule, show_schedule, remove_schedule
+from claw_log.scheduler import install_schedule, show_schedule, remove_schedule, get_schedule_summary
 
 # .env 파일은 현재 작업 디렉토리(CWD)에서 찾습니다.
 ENV_PATH = Path(os.getcwd()) / ".env"
@@ -241,6 +241,57 @@ def _update_env_projects(selected_paths, input_paths):
         print(f"❌ 설정 저장 실패: {e}")
 
 
+def show_status():
+    """현재 Claw-Log 전체 설정 상태를 한눈에 출력합니다."""
+    load_dotenv(ENV_PATH, override=True)
+
+    print("\n📊 Claw-Log 상태")
+    print("━" * 40)
+
+    # 엔진 정보
+    llm_type = os.getenv("LLM_TYPE", "")
+    if not llm_type:
+        print(f"  엔진:     ⚠️ 미설정 (claw-log --reset)")
+    else:
+        engine_label = llm_type.upper()
+        if llm_type == "openai-oauth":
+            codex_model = os.getenv("CODEX_MODEL", "gpt-5.1")
+            engine_label = f"OPENAI-OAUTH / {codex_model}"
+        print(f"  엔진:     {engine_label}")
+
+    # 프로젝트 정보
+    paths_env = os.getenv("PROJECT_PATHS", "")
+    if paths_env:
+        paths = [p.strip() for p in paths_env.split(",") if p.strip()]
+        valid = sum(1 for p in paths if Path(p).exists())
+        print(f"  프로젝트:  {len(paths)}개 등록 ({valid}개 유효)")
+    else:
+        print(f"  프로젝트:  ⚠️ 미설정")
+
+    # 스케줄 정보
+    schedule_info = get_schedule_summary()
+    print(f"  스케줄:    {schedule_info}")
+
+    # 로그 파일 정보
+    log_path = Path.cwd() / "career_logs.md"
+    if log_path.exists():
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            line_count = content.count("\n")
+            # 최근 날짜 추출
+            import re
+            dates = re.findall(r"## 📅 (\d{4}-\d{2}-\d{2})", content)
+            last_date = dates[0] if dates else "알 수 없음"
+            print(f"  로그파일:  career_logs.md ({line_count}줄, 최근: {last_date})")
+        except Exception:
+            print(f"  로그파일:  career_logs.md (읽기 실패)")
+    else:
+        print(f"  로그파일:  없음 (첫 실행 전)")
+
+    print("━" * 40)
+
+
 # ── 마법사 ──
 
 def run_wizard():
@@ -422,10 +473,14 @@ def main():
     parser.add_argument("--schedule-remove", action="store_true", help="스케줄 삭제")
     parser.add_argument("--projects", action="store_true", help="프로젝트 관리 (추가/선택/해제)")
     parser.add_argument("--projects-show", action="store_true", help="현재 프로젝트 목록 조회")
+    parser.add_argument("--status", action="store_true", help="전체 설정 상태 조회")
     parser.add_argument("--dry-run", action="store_true", help="API 호출 없이 수집될 diff 미리보기")
     args = parser.parse_args()
 
     # 0. 즉시 실행 명령어 (설정 불필요)
+    if args.status:
+        show_status()
+        return
     if args.schedule_show:
         show_schedule()
         return

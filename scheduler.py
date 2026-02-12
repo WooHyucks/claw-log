@@ -41,6 +41,32 @@ def _get_win_schedule_info():
         return None
 
 
+def get_schedule_summary():
+    """스케줄 정보를 문자열로 반환합니다 (--status용)."""
+    system = platform.system()
+
+    if system == "Windows":
+        info = _get_win_schedule_info()
+        if info:
+            for line in info.splitlines():
+                line = line.strip()
+                if any(k in line for k in ["시작 시간", "Start Time"]):
+                    time_val = line.split(":", 1)[-1].strip() if ":" in line else ""
+                    # "시작 시간:       오전 11:30:00" 등에서 시각 추출
+                    return f"매일 {time_val}" if time_val else "등록됨"
+            return "등록됨"
+        return "⚠️ 미등록"
+    else:
+        _, claw_lines = _get_cron_info()
+        if claw_lines:
+            parts = claw_lines[0].split()
+            if len(parts) >= 2:
+                minute, hour = parts[0], parts[1]
+                return f"매일 {hour.zfill(2)}:{minute.zfill(2)}"
+            return "등록됨"
+        return "⚠️ 미등록"
+
+
 def show_schedule():
     """현재 등록된 스케줄 정보를 출력합니다."""
     system = platform.system()

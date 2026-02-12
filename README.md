@@ -4,9 +4,9 @@
 
 </p>
 
+> **Fork**: 이 저장소는 [WooHyucks/claw-log](https://github.com/WooHyucks/claw-log)에서 Fork된 프로젝트입니다.
 
 > **"오늘의 기록이 내일의 이력서가 됩니다."**
-> 
 
 **Claw-Log**는 매일 밤 AI가 당신의 변경 사항을 스캔하여 기술적 의사결정과 트러블슈팅 과정을 마크다운 형식으로 자동 기록하는 CLI 도구입니다.
 
@@ -23,6 +23,8 @@
 ## ✨ 핵심 기능
 
 - **AI 기반 자동 요약**: 단순 커밋 메시지가 아닌, 실제 코드 변화에서 기술적 맥락을 AI가 파악합니다.
+- **3종 AI 엔진 지원**: Google Gemini, OpenAI API, ChatGPT 구독 OAuth (GPT-5.1/5.2) 중 선택할 수 있습니다.
+- **인터랙티브 프로젝트 탐색**: 상위 폴더 입력 시 하위 Git 저장소를 자동 탐색하고, 체크박스 UI로 선택할 수 있습니다.
 - **통합 프로젝트 관리**: 여러 폴더에 흩어진 프로젝트 성과를 한 곳에 모아 관리합니다.
 - **기록의 자산화**: 매일 기록된 로그는 로컬에 누적됩니다. 나중에 한 번에 모아 이력서나 기술 블로그의 초안으로 활용하세요.
 - **프라이버시 보장**: 소스코드를 외부 서버에 저장하지 않습니다. 모든 분석은 로컬 환경에서 수행됩니다.
@@ -46,11 +48,16 @@ pipx install claw-log
 claw-log
 ```
 
-### 3. 설정 변경
-API 키를 갱신하거나 프로젝트 경로를 수정하고 싶다면 아래 명령어를 입력하세요.
+### 3. 주요 CLI 명령어
 
 ```bash
-claw-log --reset
+claw-log                     # 실행 (최초 실행 시 설정 마법사 자동 시작)
+claw-log --reset             # 설정 초기화 및 마법사 재실행
+claw-log --projects          # 프로젝트 관리 (추가/선택/해제)
+claw-log --projects-show     # 현재 등록된 프로젝트 목록 조회
+claw-log --schedule 23:30    # 매일 자동 실행 스케줄 등록/변경
+claw-log --schedule-show     # 현재 스케줄 조회
+claw-log --schedule-remove   # 스케줄 삭제
 ```
 
 ---
@@ -83,6 +90,17 @@ AI 특유의 과장된 표현을 배제하고, 실제 개발 과정에서의 의
 ```bash
 pipx install claw-log --force --no-cache-dir
 ```
+
+---
+
+## 🔀 Fork 이후 변경사항
+
+원본 [WooHyucks/claw-log](https://github.com/WooHyucks/claw-log) 대비 추가된 기능:
+
+- **ChatGPT OAuth 인증**: ChatGPT Plus/Pro 구독자가 별도 API 키 없이 OAuth 로그인으로 GPT-5.1/5.2 사용 가능
+- **인터랙티브 프로젝트 탐색**: 상위 폴더에서 하위 Git 저장소를 재귀 탐색하고 체크박스 UI로 선택
+- **프로젝트 관리 CLI**: `--projects`, `--projects-show` 명령으로 등록된 프로젝트 관리
+- **스케줄러 강화**: 사용자 지정 시각 설정, 스케줄 조회(`--schedule-show`), 삭제(`--schedule-remove`)
 
 ---
 

@@ -111,3 +111,95 @@ class OpenAISummarizer(BaseSummarizer):
                 )
             else:
                  return f"❌ [Unknown Error] OpenAI 요약 실패:\n   {error_msg}\n   👉 네트워크 상태를 확인해주세요."
+
+class CodexOAuthSummarizer(BaseSummarizer):
+    """ChatGPT Plus/Pro 구독의 OAuth 인증을 통해 Codex 백엔드 API를 사용하는 Summarizer"""
+    
+    CODEX_API_URL = "https://chatgpt.com/backend-api/codex/responses"
+    
+    def __init__(self, model="gpt-5.1"):
+        from claw_log.oauth import load_tokens, refresh_if_needed
+        self.load_tokens = load_tokens
+        self.refresh_if_needed = refresh_if_needed
+        self.model = model
+
+    def summarize(self, text_data):
+        import json
+        try:
+            from urllib.request import Request, urlopen
+            from urllib.error import HTTPError, URLError
+            
+            # 토큰 로드 및 필요 시 갱신
+            tokens = self.load_tokens()
+            if not tokens:
+                return (
+                    "❌ [OAuth Error] 저장된 인증 정보가 없습니다.\n"
+                    "   👉 'claw-log --reset' 명령어로 OAuth 로그인을 다시 진행해주세요."
+                )
+            
+            tokens = self.refresh_if_needed(tokens)
+            access_token = tokens.get("access_token", "")
+            
+            # Codex Responses API 형식으로 요청 구성 (stream 필수)
+            payload = {
+                "model": self.model,
+                "instructions": SYSTEM_PROMPT,
+                "input": [
+                    {"role": "user", "content": f"[전체 개발 내역 데이터]\n{text_data}"}
+                ],
+                "stream": True,
+                "store": False,
+            }
+            
+            req = Request(
+                self.CODEX_API_URL,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {access_token}",
+                },
+                method="POST",
+            )
+            
+            # SSE 스트리밍 응답 파싱
+            text_parts = []
+            with urlopen(req) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8").strip()
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:]  # "data: " 이후
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        event = json.loads(data_str)
+                        ev_type = event.get("type", "")
+                        # output_text.delta → 텍스트 청크 수집
+                        if ev_type == "response.output_text.delta":
+                            delta = event.get("delta", "")
+                            if delta:
+                                text_parts.append(delta)
+                    except json.JSONDecodeError:
+                        continue
+            
+            return "".join(text_parts) if text_parts else "⚠️ 응답에서 텍스트를 추출할 수 없습니다."
+            
+        except HTTPError as e:
+            status = e.code
+            body = e.read().decode("utf-8", errors="replace")
+            if status == 401:
+                return (
+                    "❌ [OAuth Error] 인증이 만료되었습니다.\n"
+                    "   👉 'claw-log --reset' 명령어로 다시 로그인해주세요."
+                )
+            elif status == 429:
+                return (
+                    "🌐 [Quota Error] ChatGPT 구독 사용량이 초과되었습니다.\n"
+                    "   👉 잠시 후 다시 시도해주세요."
+                )
+            else:
+                return f"❌ [API Error] Codex 백엔드 오류 ({status}, model={self.model}):\n   {body[:200]}"
+        except URLError as e:
+            return f"❌ [Network Error] 네트워크 연결 실패:\n   {e.reason}"
+        except Exception as e:
+            return f"❌ [Unknown Error] Codex OAuth 요약 실패:\n   {str(e)}"

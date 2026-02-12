@@ -474,6 +474,7 @@ def main():
     parser.add_argument("--projects", action="store_true", help="프로젝트 관리 (추가/선택/해제)")
     parser.add_argument("--projects-show", action="store_true", help="현재 프로젝트 목록 조회")
     parser.add_argument("--status", action="store_true", help="전체 설정 상태 조회")
+    parser.add_argument("--dry-run", action="store_true", help="API 호출 없이 수집될 diff 미리보기")
     args = parser.parse_args()
 
     # 0. 즉시 실행 명령어 (설정 불필요)
@@ -493,6 +494,41 @@ def main():
         manage_projects()
         return
 
+    # dry-run은 환경 점검/API 설정 없이 diff만 수집
+    if args.dry_run:
+        load_dotenv(ENV_PATH, override=True)
+        paths_env = os.getenv("PROJECT_PATHS", "")
+        if not paths_env:
+            print("❌ 프로젝트가 설정되지 않았습니다. 'claw-log' 명령으로 먼저 설정하세요.")
+            return
+
+        target_paths = [p.strip() for p in paths_env.split(",") if p.strip()]
+        print(f"\n🔍 Claw-Log Dry Run — {len(target_paths)}개 프로젝트 스캔")
+        print("=" * 50)
+
+        total_chars = 0
+        collected = 0
+        for repo_path_str in target_paths:
+            p_name = Path(repo_path_str).name
+            diff = get_git_diff_for_path(repo_path_str)
+            if diff:
+                chars = len(diff)
+                truncated = min(chars, 15000)
+                total_chars += truncated
+                collected += 1
+                print(f"  ✅ [{p_name}] {chars:,}자 (전송: {truncated:,}자)")
+            elif Path(repo_path_str).exists():
+                print(f"  ⏭️  [{p_name}] 변경사항 없음")
+            else:
+                print(f"  ❌ [{p_name}] 경로 없음")
+
+        print("=" * 50)
+        print(f"  수집 프로젝트: {collected}/{len(target_paths)}")
+        print(f"  총 전송 크기:  {total_chars:,}자 (약 {total_chars // 4:,} 토큰)")
+        if total_chars == 0:
+            print("  ⚠️ 오늘 변경사항이 없습니다.")
+        return
+
     # 0-1. 런타임 환경 점검 (Pre-flight Check)
     check_environment()
 
@@ -506,7 +542,7 @@ def main():
 
     # 2. 환경변수 로드
     load_dotenv(ENV_PATH, override=True)
-    
+
     required_vars_missing = not os.getenv("API_KEY") or not os.getenv("LLM_TYPE")
     should_run_wizard = args.reset or not ENV_PATH.exists() or required_vars_missing
 
@@ -545,7 +581,7 @@ def main():
         summarizer = OpenAISummarizer(api_key)
     else:
         summarizer = GeminiSummarizer(api_key)
-    
+
     engine_label = llm_type.upper()
     if llm_type == "openai-oauth":
         engine_label = f"OPENAI-OAUTH / {codex_model}"
@@ -554,7 +590,7 @@ def main():
     # 5. Git 데이터 수집 (선택된 프로젝트만)
     target_paths = [p.strip() for p in paths_env.split(",") if p.strip()]
     combined_diffs = ""
-    
+
     for repo_path_str in target_paths:
         diff = get_git_diff_for_path(repo_path_str)
         if diff:
@@ -572,7 +608,7 @@ def main():
     # 요약 및 저장
     print("🤖 AI 요약 생성 중...")
     summary = summarizer.summarize(combined_diffs)
-    
+
     if summary and not summary.startswith(("Gemini 요약 생성 실패", "OpenAI 요약 생성 실패")):
         saved_file = prepend_to_log_file(summary)
         print(f"\n💾 기록 완료: {saved_file}")

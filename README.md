@@ -4,8 +4,6 @@
 
 </p>
 
-> **Fork**: 이 저장소는 [WooHyucks/claw-log](https://github.com/WooHyucks/claw-log)에서 Fork된 프로젝트입니다.
-
 > **"오늘의 기록이 내일의 이력서가 됩니다."**
 
 **Claw-Log**는 매일 밤 AI가 당신의 변경 사항을 스캔하여 기술적 의사결정과 트러블슈팅 과정을 마크다운 형식으로 자동 기록하는 CLI 도구입니다.
@@ -38,7 +36,7 @@
 파이썬 환경 격리를 위해 `pipx` 사용을 권장합니다.
 
 ```bash
-pipx install git+https://github.com/sanghyun-io/claw-log.git
+pipx install claw-log
 ```
 
 ### 2. 초기 설정 및 실행
@@ -108,22 +106,8 @@ AI 특유의 과장된 표현을 배제하고, 실제 개발 과정에서의 의
 명령어를 찾을 수 없거나 라이브러리 충돌이 발생하나요? 최신 Python 버전 환경에서 기존 패키지 잔재가 남아있을 때 생기는 문제입니다. 아래 명령어로 깨끗하게 재설치하세요.
 
 ```bash
-pipx install git+https://github.com/sanghyun-io/claw-log.git --force --no-cache-dir
+pipx install claw-log --force --no-cache-dir
 ```
-
----
-
-## 🔀 Fork 이후 변경사항
-
-원본 [WooHyucks/claw-log](https://github.com/WooHyucks/claw-log) 대비 추가된 기능:
-
-- **ChatGPT OAuth 인증**: ChatGPT Plus/Pro 구독자가 별도 API 키 없이 OAuth 로그인으로 GPT-5.1/5.2 사용 가능
-- **인터랙티브 프로젝트 탐색**: 상위 폴더에서 하위 Git 저장소를 재귀 탐색하고 체크박스 UI로 선택
-- **프로젝트 관리 CLI**: `--projects`, `--projects-show` 명령으로 등록된 프로젝트 관리
-- **스케줄러 강화**: 사용자 지정 시각 설정, 스케줄 조회(`--schedule-show`), 삭제(`--schedule-remove`)
-- **과거 N일 요약**: `--days 7`로 과거 커밋을 한꺼번에 요약
-- **설정/로그 조회**: `--status`, `--engine`, `--dry-run`, `--log` 명령어 추가
-- **로컬 웹 대시보드**: `--serve`로 설정/프로젝트/스케줄/로그를 브라우저에서 조회
 
 ---
 

@@ -351,14 +351,15 @@ def run_wizard():
 
 # ── Git Diff 수집 ──
 
-def get_git_diff_for_path(path_str):
+def get_git_diff_for_path(path_str, days=0):
+    """Git diff를 수집합니다. days=0이면 오늘만, days>0이면 과거 N일치."""
     path = Path(path_str).resolve()
-    
+
     if not path.exists():
         print(f"⚠️  경로를 찾을 수 없습니다: {path}")
         print("   👉 폴더 주소가 정확한지 확인해주세요.")
         return None
-        
+
     if not (path / ".git").exists():
         print(f"⚠️  Git 저장소가 아닙니다 (건너뜀): {path}")
         print("   👉 해당 폴더에 .git 디렉토리가 있는지 확인해주세요.")
@@ -366,20 +367,23 @@ def get_git_diff_for_path(path_str):
 
     exclude_patterns = [
         ":(exclude)package-lock.json", ":(exclude)yarn.lock", ":(exclude)pnpm-lock.yaml",
-        ":(exclude)*.map", ":(exclude)dist/", ":(exclude)build/", 
+        ":(exclude)*.map", ":(exclude)dist/", ":(exclude)build/",
         ":(exclude)node_modules/", ":(exclude).next/", ":(exclude).git/", ":(exclude).DS_Store"
     ]
 
     try:
         combined_result = ""
-        today_midnight = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        # 1. 오늘자 커밋
+        since_date = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        if days > 0:
+            since_date -= datetime.timedelta(days=days)
+
+        # 1. 커밋 로그
+        period_label = f"Past {days} Days" if days > 0 else "Today"
         try:
-            cmd_log = ["git", "-C", str(path), "log", f"--since={today_midnight.isoformat()}", "-p", "--", "."] + exclude_patterns
+            cmd_log = ["git", "-C", str(path), "log", f"--since={since_date.isoformat()}", "-p", "--", "."] + exclude_patterns
             log_output = subprocess.check_output(cmd_log, stderr=subprocess.STDOUT).decode("utf-8")
             if log_output.strip():
-                combined_result += "=== [Past Commits (Today)] ===\n" + log_output + "\n\n"
+                combined_result += f"=== [Past Commits ({period_label})] ===\n" + log_output + "\n\n"
         except subprocess.CalledProcessError:
             pass
 
@@ -422,6 +426,7 @@ def main():
     parser.add_argument("--schedule-remove", action="store_true", help="스케줄 삭제")
     parser.add_argument("--projects", action="store_true", help="프로젝트 관리 (추가/선택/해제)")
     parser.add_argument("--projects-show", action="store_true", help="현재 프로젝트 목록 조회")
+    parser.add_argument("--days", type=int, default=0, metavar="N", help="과거 N일치 커밋 요약 (예: --days 7)")
     args = parser.parse_args()
 
     # 0. 즉시 실행 명령어 (설정 불필요)
@@ -494,32 +499,42 @@ def main():
     engine_label = llm_type.upper()
     if llm_type == "openai-oauth":
         engine_label = f"OPENAI-OAUTH / {codex_model}"
-    print(f"🚀 Claw-Log 분석 시작 (Engine: {engine_label})...")
+    days = args.days
+    if days > 0:
+        print(f"🚀 Claw-Log 분석 시작 — 과거 {days}일 (Engine: {engine_label})...")
+    else:
+        print(f"🚀 Claw-Log 분석 시작 (Engine: {engine_label})...")
 
     # 5. Git 데이터 수집 (선택된 프로젝트만)
     target_paths = [p.strip() for p in paths_env.split(",") if p.strip()]
     combined_diffs = ""
-    
+
     for repo_path_str in target_paths:
-        diff = get_git_diff_for_path(repo_path_str)
+        diff = get_git_diff_for_path(repo_path_str, days=days)
         if diff:
             p_name = Path(repo_path_str).name
             print(f"  ✅ [{p_name}] 데이터 수집 완료")
             combined_diffs += f"\n--- PROJECT: {p_name} ---\n{diff[:15000]}\n"
         elif Path(repo_path_str).exists():
             p_name = Path(repo_path_str).name
-            print(f"  ⏭️  [{p_name}] 오늘 변경사항 없음")
+            no_change_label = f"최근 {days}일 변경사항 없음" if days > 0 else "오늘 변경사항 없음"
+            print(f"  ⏭️  [{p_name}] {no_change_label}")
 
     if not combined_diffs:
-        print("⚠️  오늘 변경사항이 발견되지 않았습니다. (종료)")
+        print("⚠️  변경사항이 발견되지 않았습니다. (종료)")
         return
 
     # 요약 및 저장
     print("🤖 AI 요약 생성 중...")
     summary = summarizer.summarize(combined_diffs)
-    
+
     if summary and not summary.startswith(("Gemini 요약 생성 실패", "OpenAI 요약 생성 실패")):
-        saved_file = prepend_to_log_file(summary)
+        if days > 0:
+            start_date = (datetime.date.today() - datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+            end_date = datetime.date.today().strftime("%Y-%m-%d")
+            saved_file = prepend_to_log_file(summary, date_label=f"{start_date} ~ {end_date}")
+        else:
+            saved_file = prepend_to_log_file(summary)
         print(f"\n💾 기록 완료: {saved_file}")
         print("\n" + "="*60 + f"\n{summary}\n" + "="*60)
     else:

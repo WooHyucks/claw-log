@@ -38,7 +38,7 @@
 파이썬 환경 격리를 위해 `pipx` 사용을 권장합니다.
 
 ```bash
-pipx install claw-log
+pipx install git+https://github.com/sanghyun-io/claw-log.git
 ```
 
 ### 2. 초기 설정 및 실행

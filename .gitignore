@@ -54,6 +54,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# === Claude Code ===
+CLAUDE.md
+
 # === IDE / Editor ===
 .vscode/
 .idea/

@@ -32,15 +32,14 @@ def read_recent_logs(n=5, filename=LOG_FILENAME):
     return entries[:n], None
 
 
-def prepend_to_log_file(summary, filename=LOG_FILENAME):
+def prepend_to_log_file(summary, filename=LOG_FILENAME, date_label=None):
     """
     현재 작업 디렉토리(CWD) 기준의 로그 파일 최상단에 새로운 로그를 추가합니다. (최신순)
+    date_label: 커스텀 날짜 레이블 (예: "2026-02-06 ~ 2026-02-12"). None이면 오늘 날짜.
     """
-    # 사용자가 라이브러리를 실행한 위치(CWD)를 기준으로 파일 경로 설정
     file_path = Path.cwd() / filename
     existing_content = ""
 
-    # 기존 내용 읽기
     if file_path.exists():
         try:
             with open(file_path, "r", encoding="utf-8") as f:
@@ -48,9 +47,8 @@ def prepend_to_log_file(summary, filename=LOG_FILENAME):
         except Exception as e:
             print(f"⚠️ 기존 로그 파일 읽기 실패: {e}")
 
-    # 새 항목 구성 (날짜 헤더 포함)
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
-    header = f"## 📅 {today_str}\n\n"
+    label = date_label if date_label else datetime.date.today().strftime("%Y-%m-%d")
+    header = f"## 📅 {label}\n\n"
     separator = "\n---\n\n"
     
     # 최신 내용이 뒤에 오는 것이 아니라 앞에 오도록 (Prepend)

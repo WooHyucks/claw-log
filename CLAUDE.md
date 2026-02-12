@@ -31,9 +31,10 @@ claw-log --schedule 23:30    # 매일 자동 실행 스케줄 등록/변경
 claw-log --schedule-show     # 현재 스케줄 조회
 claw-log --schedule-remove   # 스케줄 삭제
 
-# 로그 조회
+# 로그 조회/편집
 claw-log --log               # 최근 5개 엔트리 출력
 claw-log --log 20            # 최근 20개 엔트리 출력
+claw-log --log-edit          # 로그 파일을 기본 편집기로 열기
 
 # 대시보드
 claw-log --serve              # 로컬 웹 대시보드 (기본 포트: 8080)

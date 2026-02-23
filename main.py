@@ -4,7 +4,13 @@ import argparse
 import subprocess
 import datetime
 from pathlib import Path
+from importlib.metadata import version, PackageNotFoundError
 from dotenv import load_dotenv
+
+try:
+    __version__ = version("claw_log")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 from claw_log.engine import GeminiSummarizer, OpenAISummarizer, CodexOAuthSummarizer
 from claw_log.storage import prepend_to_log_file, read_recent_logs, LOG_FILENAME
@@ -512,7 +518,7 @@ def check_environment():
 
 def main():
     parser = argparse.ArgumentParser(description="Claw-Log: 커리어 자동 기록 도구")
-    parser.add_argument("--version", action="version", version="claw-log 0.1.3")
+    parser.add_argument("--version", action="version", version=f"claw-log {__version__}")
     parser.add_argument("--reset", action="store_true", help="설정 초기화 및 마법사 재실행")
     parser.add_argument("--schedule", metavar="HH:MM", help="스케줄 등록/변경 (예: --schedule 23:30)")
     parser.add_argument("--schedule-show", action="store_true", help="현재 스케줄 조회")

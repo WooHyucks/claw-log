@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from claw_log.engine import GeminiSummarizer, OpenAISummarizer, CodexOAuthSummarizer
 from claw_log.storage import prepend_to_log_file, read_recent_logs, LOG_FILENAME
 from claw_log.scheduler import install_schedule, show_schedule, remove_schedule, get_schedule_summary
+from claw_log.state import load_state, save_state, get_last_hash, acquire_run_lock, release_run_lock
 
 # .env 파일은 현재 작업 디렉토리(CWD)에서 찾습니다.
 ENV_PATH = Path(os.getcwd()) / ".env"
@@ -296,6 +297,17 @@ def show_status():
     else:
         print(f"  로그파일:  없음 (첫 실행 전)")
 
+    # 커밋 추적 상태
+    try:
+        tracking_state = load_state()
+        n = len(tracking_state.get("projects", {}))
+        if n:
+            print(f"  추적상태:  {n}개 프로젝트 커밋 추적 중")
+        else:
+            print(f"  추적상태:  초기 상태")
+    except Exception:
+        print(f"  추적상태:  조회 실패")
+
     print("━" * 40)
 
 
@@ -443,19 +455,91 @@ def run_wizard():
 
 # ── Git Diff 수집 ──
 
-def get_git_diff_for_path(path_str, days=0):
-    """Git diff를 수집합니다. days=0이면 오늘만, days>0이면 과거 N일치."""
+def _get_repo_key(path):
+    """R2-#1: repo_root + ref_name으로 고유 키 생성 (브랜치별 독립 추적)."""
+    try:
+        repo_root = subprocess.check_output(
+            ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+            stderr=subprocess.STDOUT
+        ).decode("utf-8").strip()
+    except subprocess.CalledProcessError:
+        repo_root = str(Path(path).resolve())
+    try:
+        ref_name = subprocess.check_output(
+            ["git", "-C", str(path), "symbolic-ref", "HEAD"],
+            stderr=subprocess.STDOUT
+        ).decode("utf-8").strip()
+    except subprocess.CalledProcessError:
+        ref_name = "detached"
+    return f"{repo_root}::{ref_name}"
+
+
+def _is_valid_ancestor(path, commit_hash):
+    """커밋이 현재 HEAD의 ancestor인지 확인 (rebase/amend 감지)."""
+    try:
+        obj_type = subprocess.check_output(
+            ["git", "-C", str(path), "cat-file", "-t", commit_hash],
+            stderr=subprocess.STDOUT
+        ).decode("utf-8").strip()
+        if obj_type != "commit":
+            return False
+        result = subprocess.run(
+            ["git", "-C", str(path), "merge-base", "--is-ancestor", commit_hash, "HEAD"],
+            capture_output=True
+        )
+        return result.returncode == 0
+    except subprocess.CalledProcessError:
+        return False
+
+
+def _get_latest_commit_hash(path):
+    """현재 HEAD의 커밋 해시를 반환."""
+    try:
+        return subprocess.check_output(
+            ["git", "-C", str(path), "rev-parse", "HEAD"],
+            stderr=subprocess.STDOUT
+        ).decode("utf-8").strip()
+    except subprocess.CalledProcessError:
+        return None
+
+
+def _count_commits_in_range(path, from_hash, to_ref="HEAD"):
+    """R2-#5: 두 지점 사이의 커밋 수를 반환. 실패 시 -1."""
+    try:
+        count_str = subprocess.check_output(
+            ["git", "-C", str(path), "rev-list", "--count", f"{from_hash}..{to_ref}"],
+            stderr=subprocess.STDOUT
+        ).decode("utf-8").strip()
+        return int(count_str)
+    except (subprocess.CalledProcessError, ValueError):
+        return -1
+
+
+def get_git_diff_for_path(path_str, days=0, last_hash=None):
+    """Git diff를 수집합니다. days=0이면 오늘만, days>0이면 과거 N일치.
+
+    Args:
+        path_str: Git 저장소 경로
+        days: 과거 N일치 수집 (0이면 오늘 또는 last_hash 이후)
+        last_hash: 마지막 처리된 커밋 해시 (None이면 날짜 기반 fallback)
+
+    Returns:
+        (diff_str, truncated, commit_count) 3-tuple.
+        diff_str: 수집된 diff 문자열 (없으면 None)
+        truncated: 15,000자 초과 여부
+        commit_count: 수집 범위의 총 커밋 수 (-1은 fallback 모드)
+    """
     path = Path(path_str).resolve()
 
     if not path.exists():
-        print(f"⚠️  경로를 찾을 수 없습니다: {path}")
-        print("   👉 폴더 주소가 정확한지 확인해주세요.")
-        return None
+        print(f"   경로를 찾을 수 없습니다: {path}")
+        print("   폴더 주소가 정확한지 확인해주세요.")
+        return (None, False, 0)
 
     if not (path / ".git").exists():
-        print(f"⚠️  Git 저장소가 아닙니다 (건너뜀): {path}")
-        print("   👉 해당 폴더에 .git 디렉토리가 있는지 확인해주세요.")
-        return None
+        print(f"   Git 저장소가 아닙니다 (건너뜀): {path}")
+        print("   해당 폴더에 .git 디렉토리가 있는지 확인해주세요.")
+        return (None, False, 0)
 
     exclude_patterns = [
         ":(exclude)package-lock.json", ":(exclude)yarn.lock", ":(exclude)pnpm-lock.yaml",
@@ -463,16 +547,41 @@ def get_git_diff_for_path(path_str, days=0):
         ":(exclude)node_modules/", ":(exclude).next/", ":(exclude).git/", ":(exclude).DS_Store"
     ]
 
+    max_count_args = ["--max-count=50"]
+    commit_count = 0
+
     try:
         combined_result = ""
         since_date = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         if days > 0:
             since_date -= datetime.timedelta(days=days)
 
-        # 1. 커밋 로그
+        # 1. 커밋 로그 수집 (분기)
         period_label = f"Past {days} Days" if days > 0 else "Today"
         try:
-            cmd_log = ["git", "-C", str(path), "log", f"--since={since_date.isoformat()}", "-p", "--", "."] + exclude_patterns
+            if last_hash and _is_valid_ancestor(path, last_hash):
+                # R2-#5: 총 커밋 수 확인 후 max-count 제한으로 수집
+                total_in_range = _count_commits_in_range(path, last_hash)
+                cmd_log = (
+                    ["git", "-C", str(path), "log", f"{last_hash}..HEAD"]
+                    + max_count_args + ["-p", "--", "."] + exclude_patterns
+                )
+                commit_count = total_in_range
+            elif last_hash:
+                # R2-#3: 무효 해시 → commit count 기반 복구 (최근 100개)
+                cmd_log = (
+                    ["git", "-C", str(path), "log", "-n", "100", "-p", "--", "."]
+                    + exclude_patterns
+                )
+                p_name = Path(path_str).name
+                print(f"  [{p_name}] 저장된 커밋 해시가 유효하지 않아 최근 커밋을 스캔합니다.")
+                commit_count = -1  # fallback 모드
+            else:
+                cmd_log = (
+                    ["git", "-C", str(path), "log", f"--since={since_date.isoformat()}"]
+                    + max_count_args + ["-p", "--", "."] + exclude_patterns
+                )
+
             log_output = subprocess.check_output(cmd_log, stderr=subprocess.STDOUT).decode("utf-8")
             if log_output.strip():
                 combined_result += f"=== [Past Commits ({period_label})] ===\n" + log_output + "\n\n"
@@ -488,10 +597,11 @@ def get_git_diff_for_path(path_str, days=0):
         except subprocess.CalledProcessError:
             pass
 
-        return combined_result if combined_result.strip() else None
+        truncated = len(combined_result) > 15000
+        return (combined_result if combined_result.strip() else None, truncated, commit_count)
 
     except Exception:
-        return None
+        return (None, False, 0)
 
 
 # ── 환경 점검 ──
@@ -594,19 +704,29 @@ def main():
 
         total_chars = 0
         collected = 0
+        dry_state = load_state()
         for repo_path_str in target_paths:
             p_name = Path(repo_path_str).name
-            diff = get_git_diff_for_path(repo_path_str)
+            repo_key = _get_repo_key(repo_path_str)
+            last_hash = get_last_hash(dry_state, repo_key)
+            diff, truncated, commit_count = get_git_diff_for_path(repo_path_str, last_hash=last_hash)
             if diff:
                 chars = len(diff)
-                truncated = min(chars, 15000)
-                total_chars += truncated
+                truncated_chars = min(chars, 15000)
+                total_chars += truncated_chars
                 collected += 1
-                print(f"  ✅ [{p_name}] {chars:,}자 (전송: {truncated:,}자)")
+                status = ""
+                if truncated:
+                    status += " (truncated)"
+                if commit_count > 50:
+                    status += f" ({commit_count}커밋 중 50개만)"
+                elif commit_count == -1:
+                    status += " (fallback 모드)"
+                print(f"  [{p_name}] {chars:,}자 (전송: {truncated_chars:,}자){status}")
             elif Path(repo_path_str).exists():
-                print(f"  ⏭️  [{p_name}] 변경사항 없음")
+                print(f"  [{p_name}] 변경사항 없음")
             else:
-                print(f"  ❌ [{p_name}] 경로 없음")
+                print(f"  [{p_name}] 경로 없음")
 
         print("=" * 50)
         print(f"  수집 프로젝트: {collected}/{len(target_paths)}")
@@ -614,6 +734,14 @@ def main():
         if total_chars == 0:
             print("  ⚠️ 오늘 변경사항이 없습니다.")
         return
+
+    # 단일 인스턴스 보호 — 위자드 및 실제 실행을 동시에 두 번 돌리지 않도록 차단
+    import atexit
+    run_lock_err = acquire_run_lock()
+    if run_lock_err:
+        print(f"❌ {run_lock_err}")
+        return
+    atexit.register(release_run_lock)
 
     # 0-1. 런타임 환경 점검 (Pre-flight Check)
     check_environment()
@@ -678,26 +806,52 @@ def main():
         print(f"🚀 Claw-Log 분석 시작 (Engine: {engine_label})...")
 
     # 5. Git 데이터 수집 (선택된 프로젝트만)
+    MAX_COMMITS = 50
     target_paths = [p.strip() for p in paths_env.split(",") if p.strip()]
     combined_diffs = ""
 
+    state = load_state()
+    pending_hashes = {}   # {repo_key: head_hash} — 요약 성공 후 저장할 해시
+    any_truncated = False
+    any_incomplete = False
+
     for repo_path_str in target_paths:
-        diff = get_git_diff_for_path(repo_path_str, days=days)
+        repo_key = _get_repo_key(repo_path_str)
+        last_hash = get_last_hash(state, repo_key) if days == 0 else None
+
+        diff, truncated, commit_count = get_git_diff_for_path(repo_path_str, days=days, last_hash=last_hash)
         if diff:
             p_name = Path(repo_path_str).name
-            print(f"  ✅ [{p_name}] 데이터 수집 완료")
+            print(f"  [{p_name}] 데이터 수집 완료")
             combined_diffs += f"\n--- PROJECT: {p_name} ---\n{diff[:15000]}\n"
+
+            if truncated:
+                any_truncated = True
+                print(f"  [{p_name}] diff가 15,000자를 초과하여 일부만 전송됩니다.")
+
+            # R1-#4 + R2-#5: truncation 또는 커밋 수 초과 시 상태 미업데이트
+            range_complete = (commit_count >= 0 and commit_count <= MAX_COMMITS)
+            should_advance = days == 0 and not truncated and range_complete
+
+            if should_advance:
+                head_hash = _get_latest_commit_hash(repo_path_str)
+                if head_hash:
+                    pending_hashes[repo_key] = head_hash
+            elif days == 0 and commit_count > MAX_COMMITS:
+                any_incomplete = True
+                print(f"  [{p_name}] 커밋 {commit_count}개 중 {MAX_COMMITS}개만 수집 — 추적 상태 미업데이트")
+
         elif Path(repo_path_str).exists():
             p_name = Path(repo_path_str).name
             no_change_label = f"최근 {days}일 변경사항 없음" if days > 0 else "오늘 변경사항 없음"
-            print(f"  ⏭️  [{p_name}] {no_change_label}")
+            print(f"  [{p_name}] {no_change_label}")
 
     if not combined_diffs:
-        print("⚠️  변경사항이 발견되지 않았습니다. (종료)")
+        print("변경사항이 발견되지 않았습니다. (종료)")
         return
 
     # 요약 및 저장
-    print("🤖 AI 요약 생성 중...")
+    print("AI 요약 생성 중...")
     summary = summarizer.summarize(combined_diffs)
 
     if summary and not summary.startswith(("Gemini 요약 생성 실패", "OpenAI 요약 생성 실패")):
@@ -707,10 +861,18 @@ def main():
             saved_file = prepend_to_log_file(summary, date_label=f"{start_date} ~ {end_date}")
         else:
             saved_file = prepend_to_log_file(summary)
-        print(f"\n💾 기록 완료: {saved_file}")
+        print(f"\n기록 완료: {saved_file}")
         print("\n" + "="*60 + f"\n{summary}\n" + "="*60)
+
+        # 요약 성공 후에만 커밋 추적 상태 저장
+        if pending_hashes:
+            save_state(pending_hashes)
+
+        if any_truncated or any_incomplete:
+            print("  일부 프로젝트의 추적 상태가 업데이트되지 않았습니다.")
+            print("  다음 실행 시 해당 커밋들이 다시 수집됩니다.")
     else:
-        print(f"❌ 요약 실패: {summary}")
+        print(f"요약 실패: {summary}")
 
 if __name__ == "__main__":
     main()

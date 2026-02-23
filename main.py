@@ -6,6 +6,12 @@ import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 
+try:
+    from importlib.metadata import version as _pkg_version, PackageNotFoundError
+    __version__ = _pkg_version("claw-log-sh")
+except (ImportError, PackageNotFoundError):
+    __version__ = "unknown"
+
 from claw_log.engine import GeminiSummarizer, OpenAISummarizer, CodexOAuthSummarizer
 from claw_log.storage import prepend_to_log_file, read_recent_logs, LOG_FILENAME
 from claw_log.scheduler import install_schedule, show_schedule, remove_schedule, get_schedule_summary
@@ -604,6 +610,51 @@ def get_git_diff_for_path(path_str, days=0, last_hash=None):
         return (None, False, 0)
 
 
+# ── 업데이트 확인 ──
+
+def check_and_update():
+    """PyPI에서 최신 버전을 확인하고 업데이트 여부를 사용자에게 묻습니다."""
+    import urllib.request
+    import json
+
+    print("🔍 최신 버전 확인 중...")
+    try:
+        url = "https://pypi.org/pypi/claw-log-sh/json"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read())
+        latest = data["info"]["version"]
+    except Exception as e:
+        print(f"⚠️ 버전 확인 실패: {e}")
+        return
+
+    current = __version__
+
+    def _ver_tuple(v):
+        return tuple(int(x) for x in v.split(".") if x.isdigit())
+
+    print(f"  현재 버전: {current}")
+    print(f"  최신 버전: {latest}")
+
+    if current != "unknown" and _ver_tuple(latest) <= _ver_tuple(current):
+        print("✅ 최신 버전입니다.")
+        return
+
+    print()
+    confirm = input("   업데이트할까요? (y/n): ").strip().lower()
+    if confirm == "y":
+        print("📦 업데이트 중...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", "claw-log-sh"]
+        )
+        if result.returncode == 0:
+            print("✅ 업데이트 완료! 변경 적용을 위해 다시 실행해주세요.")
+        else:
+            print("❌ 업데이트 실패. 직접 실행해주세요:")
+            print("   pip install --upgrade claw-log-sh")
+    else:
+        print("  ⏭️ 업데이트를 건너뜁니다.")
+
+
 # ── 환경 점검 ──
 
 def check_environment():
@@ -622,6 +673,7 @@ def check_environment():
 
 def main():
     parser = argparse.ArgumentParser(description="Claw-Log: 커리어 자동 기록 도구")
+    parser.add_argument("--version", action="version", version=f"claw-log {__version__}")
     parser.add_argument("--reset", action="store_true", help="설정 초기화 및 마법사 재실행")
     parser.add_argument("--schedule", metavar="HH:MM", help="스케줄 등록/변경 (예: --schedule 23:30)")
     parser.add_argument("--schedule-show", action="store_true", help="현재 스케줄 조회")
@@ -635,9 +687,13 @@ def main():
     parser.add_argument("--log", nargs="?", const=5, type=int, metavar="N", help="최근 N개 로그 조회 (기본: 5)")
     parser.add_argument("--serve", nargs="?", const=8080, type=int, metavar="PORT", help="로컬 웹 대시보드 (기본 포트: 8080)")
     parser.add_argument("--log-edit", action="store_true", help="커리어 로그 파일을 기본 편집기로 열기")
+    parser.add_argument("--update", action="store_true", help="최신 버전 확인 및 업데이트")
     args = parser.parse_args()
 
     # 0. 즉시 실행 명령어 (설정 불필요)
+    if args.update:
+        check_and_update()
+        return
     if args.serve is not None:
         from claw_log.server import serve_dashboard
         serve_dashboard(port=args.serve)

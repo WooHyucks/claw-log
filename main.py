@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from claw_log.engine import GeminiSummarizer, OpenAISummarizer, CodexOAuthSummarizer
 from claw_log.storage import prepend_to_log_file, read_recent_logs, LOG_FILENAME
 from claw_log.scheduler import install_schedule, show_schedule, remove_schedule, get_schedule_summary
-from claw_log.state import load_state, save_state, get_last_hash, update_last_hash
+from claw_log.state import load_state, save_state, get_last_hash, acquire_run_lock, release_run_lock
 
 # .env 파일은 현재 작업 디렉토리(CWD)에서 찾습니다.
 ENV_PATH = Path(os.getcwd()) / ".env"
@@ -735,6 +735,14 @@ def main():
             print("  ⚠️ 오늘 변경사항이 없습니다.")
         return
 
+    # 단일 인스턴스 보호 — 위자드 및 실제 실행을 동시에 두 번 돌리지 않도록 차단
+    import atexit
+    run_lock_err = acquire_run_lock()
+    if run_lock_err:
+        print(f"❌ {run_lock_err}")
+        return
+    atexit.register(release_run_lock)
+
     # 0-1. 런타임 환경 점검 (Pre-flight Check)
     check_environment()
 
@@ -857,10 +865,8 @@ def main():
         print("\n" + "="*60 + f"\n{summary}\n" + "="*60)
 
         # 요약 성공 후에만 커밋 추적 상태 저장
-        for rk, hh in pending_hashes.items():
-            state = update_last_hash(state, rk, hh)
         if pending_hashes:
-            save_state(state)
+            save_state(pending_hashes)
 
         if any_truncated or any_incomplete:
             print("  일부 프로젝트의 추적 상태가 업데이트되지 않았습니다.")

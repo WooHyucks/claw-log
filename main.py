@@ -443,6 +443,66 @@ def run_wizard():
 
 # ── Git Diff 수집 ──
 
+def _get_repo_key(path):
+    """repo_root + ref_name으로 고유 키 생성 (브랜치별 독립 추적)."""
+    try:
+        repo_root = subprocess.check_output(
+            ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+            stderr=subprocess.STDOUT
+        ).decode("utf-8").strip()
+    except subprocess.CalledProcessError:
+        repo_root = str(Path(path).resolve())
+    try:
+        ref_name = subprocess.check_output(
+            ["git", "-C", str(path), "symbolic-ref", "HEAD"],
+            stderr=subprocess.STDOUT
+        ).decode("utf-8").strip()
+    except subprocess.CalledProcessError:
+        ref_name = "detached"
+    return f"{repo_root}::{ref_name}"
+
+
+def _is_valid_ancestor(path, commit_hash):
+    """커밋이 현재 HEAD의 ancestor인지 확인 (rebase/amend 감지)."""
+    try:
+        obj_type = subprocess.check_output(
+            ["git", "-C", str(path), "cat-file", "-t", commit_hash],
+            stderr=subprocess.STDOUT
+        ).decode("utf-8").strip()
+        if obj_type != "commit":
+            return False
+        result = subprocess.run(
+            ["git", "-C", str(path), "merge-base", "--is-ancestor", commit_hash, "HEAD"],
+            capture_output=True
+        )
+        return result.returncode == 0
+    except subprocess.CalledProcessError:
+        return False
+
+
+def _get_latest_commit_hash(path):
+    """현재 HEAD의 커밋 해시를 반환."""
+    try:
+        return subprocess.check_output(
+            ["git", "-C", str(path), "rev-parse", "HEAD"],
+            stderr=subprocess.STDOUT
+        ).decode("utf-8").strip()
+    except subprocess.CalledProcessError:
+        return None
+
+
+def _count_commits_in_range(path, from_hash, to_ref="HEAD"):
+    """두 지점 사이의 커밋 수를 반환. 실패 시 -1."""
+    try:
+        count_str = subprocess.check_output(
+            ["git", "-C", str(path), "rev-list", "--count", f"{from_hash}..{to_ref}"],
+            stderr=subprocess.STDOUT
+        ).decode("utf-8").strip()
+        return int(count_str)
+    except (subprocess.CalledProcessError, ValueError):
+        return -1
+
+
 def get_git_diff_for_path(path_str, days=0):
     """Git diff를 수집합니다. days=0이면 오늘만, days>0이면 과거 N일치."""
     path = Path(path_str).resolve()

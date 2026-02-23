@@ -1,0 +1,36 @@
+name: Publish to PyPI
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  publish:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+    environment: pypi-publish
+    permissions:
+      id-token: write  # Trusted Publisher (OIDC) 방식에 필요
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build package
+        run: python -m build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # Trusted Publisher(OIDC)를 사용하는 경우 아래 with 블록 불필요.
+        # API 토큰 방식을 사용하는 경우 아래 주석을 해제하고 PYPI_API_TOKEN 시크릿을 설정하세요.
+        # with:
+        #   password: ${{ secrets.PYPI_API_TOKEN }}

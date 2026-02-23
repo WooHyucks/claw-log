@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claw-log-sh"
-version = "1.0.0"
+version = "1.0.1"
 description = "Automated Career Log using generative AI and Git diffs (fork of claw-log, original by Kim Woohyuck)"
 readme = "README.md"
 authors = [
@@ -33,6 +33,7 @@ Repository = "https://github.com/sanghyun-io/claw-log"
 
 [project.scripts]
 claw-log = "claw_log.main:main"
+claw-log-sh = "claw_log.main:main"
 
 [tool.setuptools]
 packages = ["claw_log"]

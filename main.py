@@ -672,6 +672,14 @@ def check_environment():
 # ── 메인 ──
 
 def main():
+    # Windows 스케줄러(cmd /c) 등 non-UTF-8 환경에서 이모지 출력 크래시 방지
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     parser = argparse.ArgumentParser(description="Claw-Log: 커리어 자동 기록 도구")
     parser.add_argument("--version", action="version", version=f"claw-log {__version__}")
     parser.add_argument("--reset", action="store_true", help="설정 초기화 및 마법사 재실행")

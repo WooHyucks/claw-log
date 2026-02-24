@@ -163,7 +163,8 @@ def install_schedule(schedule_time="23:30"):
     
     cwd = os.getcwd()
     log_file_path = os.path.join(cwd, SCHEDULER_LOG)
-    cmd_str = f"cd {cwd} && {python_executable} -m claw_log.main >> {log_file_path} 2>&1"
+    env_prefix = "set PYTHONIOENCODING=utf-8 && " if platform.system() == "Windows" else ""
+    cmd_str = f"cd {cwd} && {env_prefix}{python_executable} -m claw_log.main >> {log_file_path} 2>&1"
     
     print(f"\n🕒 [{system}] 스케줄러 등록 작업 시작...")
     print(f"   - 실행 시각: 매일 {hour}:{minute}")

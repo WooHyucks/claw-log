@@ -5,6 +5,8 @@ Claw-Log Dashboard Server
 
 import json
 import re
+import signal
+import threading
 import webbrowser
 from html import escape
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -349,11 +351,20 @@ def serve_dashboard(port=8080):
     print(f"   📍 {url}")
     print(f"   종료: Ctrl+C\n")
 
-    webbrowser.open(url)
+    # Git Bash(mintty)에서 Ctrl+C 시그널이 native Windows 프로세스로 신뢰성 있게
+    # 전달되지 않는 문제를 해결하기 위해 SIGINT/SIGBREAK를 명시적으로 등록.
+    # serve_forever()는 메인 스레드에서 실행 중이므로 shutdown()은 별도 스레드에서 호출.
+    def _shutdown_handler(*_):
+        print("\n\n👋 대시보드 서버를 종료합니다.")
+        threading.Thread(target=server.shutdown, daemon=True).start()
+
+    signal.signal(signal.SIGINT, _shutdown_handler)
+    sigbreak = getattr(signal, "SIGBREAK", None)  # Windows 전용
+    if sigbreak is not None:
+        signal.signal(sigbreak, _shutdown_handler)
 
     try:
+        webbrowser.open(url)
         server.serve_forever()
-    except KeyboardInterrupt:
-        print("\n\n👋 대시보드 서버를 종료합니다.")
     finally:
         server.server_close()

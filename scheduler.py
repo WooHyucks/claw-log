@@ -163,15 +163,20 @@ def install_schedule(schedule_time="23:30"):
     
     cwd = os.getcwd()
     log_file_path = os.path.join(cwd, SCHEDULER_LOG)
-    cmd_str = f"cd {cwd} && {python_executable} -m claw_log.main >> {log_file_path} 2>&1"
-    
+    # 경로에 공백이 포함될 수 있으므로 모든 경로를 따옴표로 감쌈.
+    # cd /d: 드라이브 전환도 함께 처리 (C: → D: 등).
+    cmd_str = (
+        f'cd /d "{cwd}" && '
+        f'"{python_executable}" -m claw_log.main >> "{log_file_path}" 2>&1'
+    )
+
     print(f"\n🕒 [{system}] 스케줄러 등록 작업 시작...")
     print(f"   - 실행 시각: 매일 {hour}:{minute}")
     print(f"   - 실행 경로: {cwd}")
     print(f"   - 로그 파일: {log_file_path}")
 
     if system == "Windows":
-        win_cmd = f'cmd /c "{cmd_str}"'
+        win_cmd = f"cmd /d /c {cmd_str}"
         try:
             subprocess.run([
                 "schtasks", "/Create", "/SC", "DAILY", "/TN", WIN_TASK_NAME,
